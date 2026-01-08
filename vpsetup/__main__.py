@@ -18,21 +18,21 @@ from __future__ import annotations
 
 import curses
 import os
-import random
-import re
 import shlex
 import subprocess
-import sys
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Iterable, List, Optional, Sequence, Tuple
+from typing import List, Optional, Sequence, Tuple
+
+from vpsetup.helpers import (
+    IP_RE,
+    build_client_conf,
+    build_server_conf,
+    derive_server_client_ips,
+    pick_random_port,
+)
 from vpsetup.structures import PortForward, SetupConfig
 from vpsetup.tui import CursesUI
-from vpsetup.validate import validate_iface, validate_port, validate_ip, validate_dns
-
-CIDR_RE = re.compile(r"^\d{1,3}(\.\d{1,3}){3}/\d{1,2}$")
-IP_RE = re.compile(r"^\d{1,3}(\.\d{1,3}){3}$")
-PORT_RE = re.compile(r"^\d{1,5}$")
+from vpsetup.validate import validate_cidr, validate_dns, validate_iface, validate_port
 
 
 class CmdError(RuntimeError):
@@ -163,49 +163,6 @@ def iptables_add_rule(table: Optional[str], rule: List[str]) -> None:
 def netfilter_persistent_save() -> None:
     """Saves iptables rules."""
     run_cmd(["netfilter-persistent", "save"], check=True, capture=True)
-
-
-def derive_server_client_ips(cidr: str) -> Tuple[str, str]:
-    base_ip = cidr.split("/", 1)[0]
-    octets = base_ip.split(".")
-    if len(octets) != 4:
-        raise ValueError("Bad CIDR base IP.")
-    prefix = ".".join(octets[:3])
-    return f"{prefix}.1", f"{prefix}.2"
-
-
-def pick_random_port() -> int:
-    return random.randint(20000, 60000)
-
-
-def build_server_conf(server_addr: str, listen_port: int, privkey: str, peers: List[Tuple[str, str]]) -> str:
-    lines = [
-        "[Interface]",
-        f"Address = {server_addr}",
-        f"ListenPort = {listen_port}",
-        f"PrivateKey = {privkey}",
-    ]
-    for pubkey, allowed_ips in peers:
-        lines += ["", "[Peer]", f"PublicKey = {pubkey}", f"AllowedIPs = {allowed_ips}"]
-    return "\n".join(lines) + "\n"
-
-
-def build_client_conf(client_addr: str, privkey: str, dns: str, server_pub: str, endpoint: str, allowed_ips: str) -> str:
-    return "\n".join(
-        [
-            "[Interface]",
-            f"PrivateKey = {privkey}",
-            f"Address = {client_addr}",
-            f"DNS = {dns}",
-            "",
-            "[Peer]",
-            f"PublicKey = {server_pub}",
-            f"Endpoint = {endpoint}",
-            f"AllowedIPs = {allowed_ips}",
-            "PersistentKeepalive = 25",
-            "",
-        ]
-    )
 
 
 def ensure_packages(ui: Optional[CursesUI]) -> None:

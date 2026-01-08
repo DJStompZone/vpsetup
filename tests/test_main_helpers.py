@@ -1,4 +1,4 @@
-from vpsetup.__main__ import build_client_conf, build_server_conf, derive_server_client_ips
+from vpsetup.helpers import build_client_conf, build_server_conf, derive_server_client_ips
 
 
 def test_derive_server_client_ips() -> None:
