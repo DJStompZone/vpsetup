@@ -1,0 +1,20 @@
+[project]
+name = "vpsetup"
+version = "1.0.0"
+description = "Curses TUI to set up WireGuard on a VPS for CGNAT-friendly inbound forwarding."
+readme = "README.md"
+requires-python = ">=3.10,<4.0"
+authors = [
+  { name = "DJ Stomp", email = "85457381+DJStompZone@users.noreply.github.com" }
+]
+dependencies = []
+
+[project.scripts]
+vpsetup = "vpsetup.__main__:main"
+
+[tool.poetry]
+packages = [{ include = "vpsetup" }]
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
