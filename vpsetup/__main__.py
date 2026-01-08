@@ -26,7 +26,9 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable, List, Optional, Sequence, Tuple
-
+from vpsetup.structures import PortForward, SetupConfig
+from vpsetup.tui import CursesUI
+from vpsetup.validate import validate_iface, validate_port, validate_ip, validate_dns
 
 CIDR_RE = re.compile(r"^\d{1,3}(\.\d{1,3}){3}/\d{1,2}$")
 IP_RE = re.compile(r"^\d{1,3}(\.\d{1,3}){3}$")
@@ -123,8 +125,7 @@ def file_write_secure(path: Path, content: str) -> None:
 def wg_genkeypair() -> Tuple[str, str]:
     """Generates (private_key, public_key) using wg."""
     priv = run_cmd(["wg", "genkey"]).stdout.strip()
-    pub = run_cmd(["wg", "pubkey"], capture=True, text=True, check=True,).stdout  # placeholder
-    # Pipe priv into wg pubkey safely without shells.
+    pub = run_cmd(["wg", "pubkey"], capture=True, text=True, check=True,).stdout
     pub = subprocess.run(["wg", "pubkey"], input=priv + "\n", text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True).stdout.strip()
     return priv, pub
 
@@ -162,217 +163,6 @@ def iptables_add_rule(table: Optional[str], rule: List[str]) -> None:
 def netfilter_persistent_save() -> None:
     """Saves iptables rules."""
     run_cmd(["netfilter-persistent", "save"], check=True, capture=True)
-
-
-@dataclass
-class PortForward:
-    """A DNAT forward definition."""
-    proto: str  # tcp/udp
-    public_port: int
-    dest_ip: str
-    dest_port: int
-
-
-@dataclass
-class SetupConfig:
-    """Configuration from the TUI."""
-    wg_iface: str
-    wg_port: int
-    wg_cidr: str
-    server_ip: str
-    client_ip: str
-    dns: str
-    route_all: bool
-    randomize_port: bool
-    add_forwards: List[PortForward]
-
-
-# ----------------------------- Curses TUI ----------------------------- #
-
-class CursesUI:
-    """Tiny curses UI toolkit with menus, inputs, and dialogs."""
-
-    def __init__(self, stdscr: "curses._CursesWindow") -> None:
-        self.stdscr = stdscr
-        curses.curs_set(0)
-        curses.start_color()
-        curses.use_default_colors()
-        curses.init_pair(1, curses.COLOR_CYAN, -1)
-        curses.init_pair(2, curses.COLOR_YELLOW, -1)
-        curses.init_pair(3, curses.COLOR_GREEN, -1)
-        curses.init_pair(4, curses.COLOR_RED, -1)
-        self.color_title = curses.color_pair(1) | curses.A_BOLD
-        self.color_hint = curses.color_pair(2)
-        self.color_ok = curses.color_pair(3)
-        self.color_err = curses.color_pair(4) | curses.A_BOLD
-
-    def _clear(self) -> None:
-        self.stdscr.erase()
-        self.stdscr.refresh()
-
-    def msgbox(self, title: str, msg: str) -> None:
-        """Shows a blocking message box."""
-        self._draw_box(title, msg.splitlines(), footer="Press any key")
-        self.stdscr.getch()
-
-    def yesno(self, title: str, msg: str) -> bool:
-        """Yes/No dialog."""
-        lines = msg.splitlines()
-        idx = 0  # 0 yes, 1 no
-        while True:
-            footer = "[ Yes ]   No" if idx == 0 else "  Yes   [ No ]"
-            self._draw_box(title, lines, footer=footer)
-            ch = self.stdscr.getch()
-            if ch in (curses.KEY_LEFT, ord('h')):
-                idx = 0
-            elif ch in (curses.KEY_RIGHT, ord('l')):
-                idx = 1
-            elif ch in (10, 13, curses.KEY_ENTER):
-                return idx == 0
-            elif ch in (27,):  # ESC
-                return False
-
-    def inputbox(self, title: str, prompt: str, default: str, validator: Optional[Callable[[str], Optional[str]]] = None) -> str:
-        """Text input box with optional validation."""
-        buf = list(default)
-        pos = len(buf)
-        curses.curs_set(1)
-        try:
-            while True:
-                self._draw_box(title, [prompt, "", "".join(buf)], footer="Enter=OK  ESC=Cancel")
-                y, x = self._input_coords(prompt_lines=3)
-                self.stdscr.move(y, x + pos)
-                ch = self.stdscr.getch()
-                if ch in (27,):  # ESC
-                    return default
-                if ch in (10, 13, curses.KEY_ENTER):
-                    val = "".join(buf).strip()
-                    if validator:
-                        err = validator(val)
-                        if err:
-                            self.msgbox("Validation", err)
-                            continue
-                    return val
-                if ch in (curses.KEY_BACKSPACE, 127, 8):
-                    if pos > 0:
-                        buf.pop(pos - 1)
-                        pos -= 1
-                elif ch == curses.KEY_LEFT:
-                    pos = max(0, pos - 1)
-                elif ch == curses.KEY_RIGHT:
-                    pos = min(len(buf), pos + 1)
-                elif 32 <= ch <= 126:
-                    buf.insert(pos, chr(ch))
-                    pos += 1
-        finally:
-            curses.curs_set(0)
-
-    def menu(self, title: str, prompt: str, items: List[Tuple[str, str]]) -> str:
-        """Simple vertical menu; returns chosen key."""
-        idx = 0
-        while True:
-            self._clear()
-            h, w = self.stdscr.getmaxyx()
-            self.stdscr.addstr(1, 2, title, self.color_title)
-            self.stdscr.addstr(3, 2, prompt, self.color_hint)
-            start_y = 5
-            for i, (k, label) in enumerate(items):
-                marker = "➤ " if i == idx else "  "
-                style = curses.A_REVERSE if i == idx else curses.A_NORMAL
-                self.stdscr.addstr(start_y + i, 4, f"{marker}{label}", style)
-            self.stdscr.addstr(h - 2, 2, "↑/↓ move   Enter select   ESC cancel", self.color_hint)
-            self.stdscr.refresh()
-
-            ch = self.stdscr.getch()
-            if ch in (curses.KEY_UP, ord('k')):
-                idx = (idx - 1) % len(items)
-            elif ch in (curses.KEY_DOWN, ord('j')):
-                idx = (idx + 1) % len(items)
-            elif ch in (10, 13, curses.KEY_ENTER):
-                return items[idx][0]
-            elif ch in (27,):
-                return items[0][0]
-
-    def _draw_box(self, title: str, lines: List[str], footer: str) -> None:
-        self._clear()
-        h, w = self.stdscr.getmaxyx()
-        box_w = min(90, w - 4)
-        box_h = min(max(10, len(lines) + 7), h - 4)
-        top = (h - box_h) // 2
-        left = (w - box_w) // 2
-
-        win = curses.newwin(box_h, box_w, top, left)
-        win.box()
-        win.addstr(0, 2, f" {title} ", self.color_title)
-
-        y = 2
-        for line in lines[: box_h - 5]:
-            win.addstr(y, 2, line[: box_w - 4])
-            y += 1
-
-        win.addstr(box_h - 2, 2, footer[: box_w - 4], self.color_hint)
-        win.refresh()
-
-    def _input_coords(self, prompt_lines: int) -> Tuple[int, int]:
-        h, w = self.stdscr.getmaxyx()
-        box_w = min(90, w - 4)
-        box_h = min(max(10, prompt_lines + 7), h - 4)
-        top = (h - box_h) // 2
-        left = (w - box_w) // 2
-        # Input line is third content line inside the box (after prompt + blank).
-        y = top + 2 + 2
-        x = left + 2
-        return y, x
-
-
-# ----------------------------- Flow ----------------------------- #
-
-def validate_iface(v: str) -> Optional[str]:
-    if not v or not re.match(r"^[a-zA-Z0-9_.-]{1,15}$", v):
-        return "Interface name looks invalid (try wg0)."
-    return None
-
-
-def validate_port(v: str) -> Optional[str]:
-    if not PORT_RE.match(v):
-        return "Port must be numeric."
-    n = int(v)
-    if not (1 <= n <= 65535):
-        return "Port must be between 1 and 65535."
-    return None
-
-
-def validate_cidr(v: str) -> Optional[str]:
-    if not CIDR_RE.match(v):
-        return "CIDR must look like 10.10.10.0/24"
-    ip, mask = v.split("/", 1)
-    parts = [int(p) for p in ip.split(".")]
-    if any(p < 0 or p > 255 for p in parts):
-        return "CIDR IP octets must be 0-255."
-    m = int(mask)
-    if m < 8 or m > 30:
-        return "CIDR mask should be between /8 and /30 for this use."
-    return None
-
-
-def validate_ip(v: str) -> Optional[str]:
-    if not IP_RE.match(v):
-        return "IP must look like 10.10.10.2"
-    parts = [int(p) for p in v.split(".")]
-    if any(p < 0 or p > 255 for p in parts):
-        return "IP octets must be 0-255."
-    return None
-
-
-def validate_dns(v: str) -> Optional[str]:
-    # Allow comma-separated.
-    parts = [p.strip() for p in v.split(",") if p.strip()]
-    if not parts:
-        return "DNS cannot be empty."
-    for p in parts:
-        if not IP_RE.match(p):
-            return "DNS must be IPv4 (e.g. 1.1.1.1) or comma-separated IPv4 list."
-    return None
 
 
 def derive_server_client_ips(cidr: str) -> Tuple[str, str]:
@@ -458,7 +248,6 @@ def setup_flow(stdscr: "curses._CursesWindow") -> None:
         ui.msgbox("Network detect failed", str(e))
         return
 
-    # Collect config
     wg_iface = ui.inputbox("WireGuard Setup", "WireGuard interface name:", "wg0", validator=validate_iface)
     wg_port_s = ui.inputbox("WireGuard Setup", "WireGuard UDP listen port:", "51820", validator=validate_port)
     wg_cidr = ui.inputbox("WireGuard Setup", "WireGuard subnet CIDR (server .1, client .2):", "10.10.10.0/24", validator=validate_cidr)
@@ -518,7 +307,6 @@ def setup_flow(stdscr: "curses._CursesWindow") -> None:
         add_forwards=forwards,
     )
 
-    # Apply config
     try:
         ensure_sysctl_forwarding()
 
@@ -565,7 +353,6 @@ def setup_flow(stdscr: "curses._CursesWindow") -> None:
         ui.msgbox("Setup failed", f"{e}")
         return
 
-    # Summary
     forward_lines = []
     if cfg.add_forwards:
         forward_lines.append("Forwards:")
@@ -597,12 +384,10 @@ def setup_flow(stdscr: "curses._CursesWindow") -> None:
         ),
     )
 
-    # Drop out of curses and print QR + path for copy/paste usability.
     curses.endwin()
     print(f"\nClient config: /root/wireguard-clients/client-{cfg.wg_iface}.conf\n")
     try:
         cp = run_cmd(["qrencode", "-t", "ansiutf8"], capture=True, text=True, check=True)
-        # qrencode reads stdin; use subprocess.run directly
         qr = subprocess.run(
             ["qrencode", "-t", "ansiutf8"],
             input=client_conf_text,
