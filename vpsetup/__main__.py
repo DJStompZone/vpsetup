@@ -16,12 +16,11 @@ Usage:
 
 from __future__ import annotations
 
-import curses
 import os
 import shlex
 import subprocess
 from pathlib import Path
-from typing import List, Optional, Sequence, Tuple
+from typing import TYPE_CHECKING, List, Optional, Sequence, Tuple
 
 from vpsetup.helpers import (
     IP_RE,
@@ -33,6 +32,9 @@ from vpsetup.helpers import (
 from vpsetup.structures import PortForward, SetupConfig
 from vpsetup.tui import CursesUI
 from vpsetup.validate import validate_cidr, validate_dns, validate_iface, validate_port
+
+if TYPE_CHECKING:
+    import curses
 
 
 class CmdError(RuntimeError):
@@ -184,6 +186,8 @@ def apply_dnat_forward(pub_iface: str, wg_iface: str, fwd: PortForward) -> None:
 
 
 def setup_flow(stdscr: "curses._CursesWindow") -> None:
+    import curses
+
     ui = CursesUI(stdscr)
 
     try:
@@ -360,6 +364,8 @@ def setup_flow(stdscr: "curses._CursesWindow") -> None:
 
 def main() -> int:
     try:
+        import curses
+
         curses.wrapper(setup_flow)
         return 0
     except KeyboardInterrupt:
