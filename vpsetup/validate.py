@@ -1,14 +1,9 @@
-import curses
-import os
-import random
 import re
-import shlex
-import subprocess
-import sys
-from dataclasses import dataclass
-from pathlib import Path
-from typing import Callable, Iterable, List, Optional, Sequence, Tuple
+from typing import Optional
 
+CIDR_RE = re.compile(r"^\d{1,3}(\.\d{1,3}){3}/\d{1,2}$")
+IP_RE = re.compile(r"^\d{1,3}(\.\d{1,3}){3}$")
+PORT_RE = re.compile(r"^\d{1,5}$")
 
 
 def validate_iface(v: str) -> Optional[str]:
