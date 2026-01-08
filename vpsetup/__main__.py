@@ -28,11 +28,9 @@ from pathlib import Path
 from typing import Callable, Iterable, List, Optional, Sequence, Tuple
 from vpsetup.structures import PortForward, SetupConfig
 from vpsetup.tui import CursesUI
-from vpsetup.validate import validate_iface, validate_port, validate_ip, validate_dns
+from vpsetup.validate import validate_iface, validate_port, validate_ip, validate_dns, validate_cidr, IP_RE
 
-CIDR_RE = re.compile(r"^\d{1,3}(\.\d{1,3}){3}/\d{1,2}$")
-IP_RE = re.compile(r"^\d{1,3}(\.\d{1,3}){3}$")
-PORT_RE = re.compile(r"^\d{1,5}$")
+
 
 
 class CmdError(RuntimeError):
