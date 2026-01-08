@@ -120,12 +120,19 @@ def file_write_secure(path: Path, content: str) -> None:
         os.umask(old_umask)
 
 
-def wg_genkeypair() -> Tuple[str, str]:
+def wg_genkeypair() -> tuple[str, str]:
     """Generates (private_key, public_key) using wg."""
     priv = run_cmd(["wg", "genkey"]).stdout.strip()
-    pub = run_cmd(["wg", "pubkey"], capture=True, text=True, check=True,).stdout
-    pub = subprocess.run(["wg", "pubkey"], input=priv + "\n", text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True).stdout.strip()
+    pub = subprocess.run(
+        ["wg", "pubkey"],
+        input=priv + "\n",
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True,
+    ).stdout.strip()
     return priv, pub
+
 
 
 def systemctl_enable_restart(unit: str) -> None:
