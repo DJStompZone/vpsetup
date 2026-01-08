@@ -1,3 +1,6 @@
+from dataclasses import dataclass
+from typing import List
+
 @dataclass
 class PortForward:
     """A DNAT forward definition."""

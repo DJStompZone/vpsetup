@@ -9,6 +9,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable, List, Optional, Sequence, Tuple
 
+CIDR_RE = re.compile(r"^\d{1,3}(\.\d{1,3}){3}/\d{1,2}$")
+IP_RE = re.compile(r"^\d{1,3}(\.\d{1,3}){3}$")
+PORT_RE = re.compile(r"^\d{1,5}$")
+
 
 
 def validate_iface(v: str) -> Optional[str]:
