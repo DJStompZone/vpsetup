@@ -392,7 +392,6 @@ def setup_flow(stdscr: "curses._CursesWindow") -> None:
     curses.endwin()
     print(f"\nClient config: /root/wireguard-clients/client-{cfg.wg_iface}.conf\n")
     try:
-        cp = run_cmd(["qrencode", "-t", "ansiutf8"], capture=True, text=True, check=True)
         qr = subprocess.run(
             ["qrencode", "-t", "ansiutf8"],
             input=client_conf_text,
@@ -400,10 +399,12 @@ def setup_flow(stdscr: "curses._CursesWindow") -> None:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             check=True,
+            timeout=5,
         ).stdout
         print(qr)
     except Exception:
         print("(qrencode not available or failed; you can scp the conf file instead.)")
+
 
 
 def main() -> int:
